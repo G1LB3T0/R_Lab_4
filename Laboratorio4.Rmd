@@ -189,3 +189,86 @@ El gráfico revela que el árbol identificó automáticamente que las variables 
 
 Este hallazgo es consistente con lo encontrado, donde la capacidad y el espacio físico dominaban la relación con el precio. Curiosamente, estimated_revenue_l365d y longitude también aparecen con importancia moderada, sugiriendo que la ubicación geográfica y el historial de ingresos aportan información adicional que la regresión lineal simple no capturaba.
 
+
+# 4. Haga, al menos, 3 modelos más, cambiando el parámetro de la profundidad del árbol. ¿Cuál es el mejor modelo para predecir el precio por noche?
+```{r}
+# Modelo con profundidad 3 
+arbol_prof3 <- rpart(price ~ ., data = train_arbol, method = "anova",
+                     control = rpart.control(maxdepth = 3))
+
+pred_prof3 <- predict(arbol_prof3, newdata = test_arbol)
+rmse_prof3 <- RMSE(pred_prof3, test_arbol$price)
+mae_prof3  <- MAE(pred_prof3,  test_arbol$price)
+r2_prof3   <- cor(pred_prof3,  test_arbol$price)^2
+
+rpart.plot(arbol_prof3,
+           type = 4, extra = 101, fallen.leaves = TRUE,
+           main = "Árbol de Regresión – Profundidad 3", cex = 0.7)
+
+# Modelo con profundidad 5 
+arbol_prof5 <- rpart(price ~ ., data = train_arbol, method = "anova",
+                     control = rpart.control(maxdepth = 5))
+
+pred_prof5 <- predict(arbol_prof5, newdata = test_arbol)
+rmse_prof5 <- RMSE(pred_prof5, test_arbol$price)
+mae_prof5  <- MAE(pred_prof5,  test_arbol$price)
+r2_prof5   <- cor(pred_prof5,  test_arbol$price)^2
+
+rpart.plot(arbol_prof5,
+           type = 4, extra = 101, fallen.leaves = TRUE,
+           main = "Árbol de Regresión – Profundidad 5", cex = 0.7)
+
+#  Modelo con profundidad 10 
+arbol_prof10 <- rpart(price ~ ., data = train_arbol, method = "anova",
+                      control = rpart.control(maxdepth = 10))
+
+pred_prof10 <- predict(arbol_prof10, newdata = test_arbol)
+rmse_prof10 <- RMSE(pred_prof10, test_arbol$price)
+mae_prof10  <- MAE(pred_prof10,  test_arbol$price)
+r2_prof10   <- cor(pred_prof10,  test_arbol$price)^2
+
+rpart.plot(arbol_prof10,
+           type = 4, extra = 101, fallen.leaves = TRUE,
+           main = "Árbol de Regresión – Profundidad 10", cex = 0.65)
+```
+## Árbol de Regresión – Profundidad 3
+Este árbol es el más simple de los tres y toma decisiones basándose únicamente en tres variables: bathrooms, accommodates y estimated_revenue_l365d. La primera división ocurre en la raíz con bathrooms < 1.8, separando el 62% de las propiedades (precio promedio 164/noche) del 38% con más baños (precio promedio 334/noche), lo que confirma que la cantidad de baños es el factor más determinante del precio. En el lado izquierdo, accommodates divide las propiedades pequeñas: las que aceptan menos de 4 personas promedian 133, mientras las de mayor capacidad suben a 195. En el lado derecho, propiedades con entre 1.8 y 2.8 baños se subdividen por ingresos anuales estimados, donde el pequeño grupo con ingresos mayores a 66,000 al año alcanza un precio promedio de 466/noche. Las propiedades con más de 2.8 baños y capacidad mayor a 4 personas son las más caras con $484/noche aunque representan apenas el 8% del total. Al ser poco profundo, el árbol es interpretable pero sacrifica precisión al no capturar matices adicionales.
+
+## Árbol de Regresión – Profundidad 5
+Este árbol conserva exactamente la misma estructura base que el de profundidad 3, pero agrega dos niveles adicionales de decisión dentro del grupo de propiedades con ingresos bajos (menos de 66,000 anuales y entre 1.8 y 2.8 baños). La nueva variable que aparece es longitude, que divide geográficamente las propiedades: aquellas con longitud mayor o igual a -157 (propiedades en la zona continental de Estados Unidos) se separan de las ubicadas más al oeste (como Hawaii, con longitud menor a -157), que tienen un precio promedio de 370/noche a pesar de tener ingresos estimados bajos. Dentro del grupo continental, accommodates vuelve a aparecer separando propiedades pequeñas (103, solo 1% del total) de las más grandes ($271, 20% del total). Este árbol revela que la ubicación geográfica empieza a tener relevancia una vez que se controla por baños e ingresos, algo que el árbol de profundidad 3 no podía detectar.
+
+## Árbol de Regresión – Profundidad 10
+Este árbol comparte la misma estructura que el de profundidad 5 en todos sus niveles superiores, y agrega una división más dentro del grupo continental de mayor capacidad (accommodates >= 4, longitud >= -157, ingresos < 66,000). La nueva variable es nuevamente longitude, ahora con el umbral -74, separando propiedades en la costa este (longitud >= -74, precio promedio $255, 18% del total) de propiedades en zonas intermedias del país (longitud < -74, precio promedio 416, apenas 2% del total). El hecho de que el árbol con profundidad 10 tenga prácticamente la misma estructura que el de profundidad 5 indica que el modelo ya alcanzó su límite natural de información útil: agregar más profundidad no genera nuevas divisiones significativas en la mayoría de ramas, lo que sugiere que una profundidad de 5 es suficiente para capturar los patrones más importantes sin caer en overfitting.
+
+```{r}
+# ── Tabla comparativa de los 4 modelos ───────────────────────────────
+comparacion_prof <- data.frame(
+  Modelo      = c("Base (defecto)", "Profundidad 3",
+                  "Profundidad 5",  "Profundidad 10"),
+  RMSE        = round(c(rmse_arbol, rmse_prof3,
+                        rmse_prof5, rmse_prof10), 2),
+  MAE         = round(c(mae_arbol,  mae_prof3,
+                        mae_prof5,  mae_prof10),  2),
+  R2          = round(c(r2_arbol,   r2_prof3,
+                        r2_prof5,   r2_prof10),   4)
+)
+
+print(comparacion_prof)
+```
+La tabla revela un resultado interesante y es que el modelo base (parámetros por defecto de rpart) y el modelo de profundidad 10 obtienen exactamente las mismas métricas (RMSE = 130.84, MAE = 90.38, R² = 0.4151), lo que confirma lo observado visualmente en los árboles — a partir de cierta profundidad el modelo ya no encuentra divisiones adicionales que mejoren significativamente la predicción. El peor modelo es el de profundidad 3 con RMSE = 136.63 y R² = 0.3622, lo que era esperado dado que su estructura simplificada no captura suficientes patrones del precio. El modelo de profundidad 5 queda en un punto intermedio (RMSE = 132.89, R² = 0.3966), mejorando al de profundidad 3 pero sin llegar al nivel del modelo base. En general, ninguno de los modelos alcanza un R² superior a 0.42, lo que indica que el precio por noche en Airbnb tiene una variabilidad considerable que las variables numéricas disponibles no logran explicar completamente por sí solas. El mejor modelo para predecir el precio por noche es el árbol base o el de profundidad 10, siendo este último preferible porque hace explícita la profundidad usada y produce resultados idénticos de forma controlada y reproducible.
+
+```{r grafico-comparacion, fig.width=20}
+# Gráfico comparativo 
+ggplot(comparacion_prof,
+       aes(x = reorder(Modelo, RMSE), y = RMSE, fill = Modelo)) +
+  geom_col(show.legend = FALSE, width = 0.6) +
+  geom_text(aes(label = RMSE), hjust = -0.2, fontface = "bold") +
+  coord_flip() +
+  labs(title    = "Comparación de RMSE por profundidad del árbol",
+       subtitle = "Menor RMSE = mejor modelo",
+       x = NULL, y = "RMSE (USD)") +
+  theme_minimal()
+```
+
+El gráfico de barras horizontales confirma visualmente lo que la tabla mostró numéricamente. La barra de Profundidad 3 es la más larga con un RMSE de 136.63, siendo el modelo que más se equivoca al predecir el precio por noche, lo cual era esperado ya que con solo 3 niveles el árbol no tiene suficiente capacidad para capturar la variabilidad del precio. Le sigue Profundidad 5 con 132.89, mostrando una mejora moderada al incorporar variables adicionales como la ubicación geográfica (`longitude`). Las barras de Profundidad 10 y **Base (defecto) son idénticas con 130.84, siendo los modelos más precisos de los cuatro. Esto evidencia que el algoritmo `rpart` por defecto ya encuentra internamente una profundidad cercana a la óptima para este conjunto de datos, y forzar mayor profundidad no genera mejoras adicionales. La diferencia total entre el peor y el mejor modelo es de apenas $5.79 en RMSE, lo que sugiere que la limitación no está en la profundidad del árbol sino en las variables disponibles, ya que el precio de Airbnb depende también de factores cualitativos como las amenidades, la reputación del anfitrión o la calidad de las fotos que no están capturados en las variables numéricas del dataset.
+
