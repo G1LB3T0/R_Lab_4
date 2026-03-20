@@ -316,3 +316,109 @@ ggplot(comparacion_final,
 ```
 El gráfico permite comparar visualmente los cinco modelos de menor a mayor RMSE. En la parte superior se ubican los dos modelos con peor desempeño: Árbol Profundidad 3 con 136.63 y Regresión Lineal con 136.11, cuyas barras son prácticamente del mismo largo, evidenciando que ambos modelos simples tienen una capacidad predictiva muy similar y limitada. En el centro aparece Árbol Profundidad 5 con 132.89, mostrando una mejora visible al incorporar la variable geográfica en sus divisiones. En la parte inferior, con las barras más cortas y por tanto los mejores resultados, se encuentran Árbol Profundidad 10 y Árbol base (defecto) ambos con 130.84, siendo los ganadores claros de la comparación. Lo más relevante del gráfico es que la Regresión Lineal queda en segunda posición de peor a mejor, superada por tres de los cuatro árboles evaluados, lo que demuestra que modelar el precio de Airbnb requiere capturar relaciones no lineales que la regresión lineal no puede representar. La diferencia visual entre las barras no es dramática, pero es consistente: los árboles con mayor flexibilidad siempre superan al modelo lineal en este conjunto de datos.
 
+# 6. Dependiendo del análisis exploratorio elaborado cree una variable respuesta que le permita clasificar las casas en Económicas, Intermedias o Caras. Los límites de estas clases
+deben tener un fundamento en la distribución de los datos de precios, y estar bien explicados.
+```{r}
+summary(listings_clean$price)
+
+# Visualizar la distribución con un histograma
+ggplot(listings_clean %>% filter(!is.na(price), price > 0, price < 1000),
+       aes(x = price)) +
+  geom_histogram(fill = "#5C6BC0", color = "white", bins = 60) +
+  labs(title    = "Distribución del precio por noche – Airbnb listings",
+       subtitle = "Base para definir los límites de las categorías",
+       x = "Precio por noche (USD)", y = "Frecuencia") +
+  theme_minimal()
+```
+El histograma revela que la distribución del precio por noche en el dataset de Airbnb es fuertemente sesgada hacia la derecha. La gran mayoría de las propiedades se concentran en el rango de 0 a 250 por noche, con el pico más alto alrededor de los 100-150, lo que indica que ese es el precio más frecuente en el mercado. A partir de los 250 la frecuencia cae drásticamente, y las propiedades con precios superiores a 500 son relativamente escasas, formando una cola larga que se extiende hasta los 1,000. Este comportamiento es típico de los mercados de alojamiento, donde la mayoría de la oferta es accesible pero existe un segmento premium de propiedades de lujo que empuja la media muy por encima de la mediana (media=750 vs mediana=193 según el summary). Esta distribución asimétrica justifica el uso de percentiles como puntos de corte en lugar de la media o valores arbitrarios, ya que la media está distorsionada por las propiedades más caras y no representa bien al mercado general. Usar P33 y P67 garantiza que cada categoría (Económica, Intermedia y Cara) contenga aproximadamente el mismo número de propiedades, lo que produce un árbol de clasificación balanceado y más confiable.
+
+```{r}
+# Definición de los puntos de corte 
+precios_validos <- listings_clean %>%
+  filter(!is.na(price), price > 0, price < 1000) %>%
+  pull(price)
+
+p33 <- quantile(precios_validos, 0.33)
+p67 <- quantile(precios_validos, 0.67)
+
+cat("Punto de corte inferior (P33):", round(p33, 2), "USD/noche\n")
+cat("Punto de corte superior (P67):", round(p67, 2), "USD/noche\n")
+```
+Los puntos de corte calculados a partir de los percentiles 33 y 67 del precio por noche son P33 = 136 USD y P67 = 250 USD. Esto significa que la variable categórica `precio_cat` queda definida de la siguiente manera: las propiedades Económicas son aquellas con un precio por noche de hasta 136, representando el tercio más accesible del mercado y abarcando la zona de mayor concentración del histograma; las propiedades Intermedias tienen un precio entre 136 y 250 por noche, cubriendo el segmento medio donde la frecuencia ya empieza a descender y las propiedades Caras son aquellas con precio superior a 250 por noche, correspondiendo al tercio más costoso donde las frecuencias son bajas pero los precios pueden alcanzar los 1,000. Estos límites tienen un fundamento claro en los datos: el corte en 136 coincide aproximadamente con la mediana visual del histograma (zona de mayor densidad), mientras que el corte en 250 marca el punto donde la distribución comienza a aplanarse notablemente. Al usar percentiles en lugar de valores arbitrarios, se garantiza que cada categoría contenga aproximadamente el mismo número de propiedades, lo que evita que el árbol de clasificación quede sesgado hacia una clase dominante y mejora su capacidad para aprender patrones en los tres segmentos de precio.
+
+```{r fig.width=20}
+# Histograma con los cortes marcados
+ggplot(data.frame(price = precios_validos), aes(x = price)) +
+  geom_histogram(fill = "#5C6BC0", color = "white", bins = 60) +
+  geom_vline(xintercept = p33, color = "#4CAF50",
+             linetype = "dashed", linewidth = 1.2) +
+  geom_vline(xintercept = p67, color = "#F44336",
+             linetype = "dashed", linewidth = 1.2) +
+  annotate("text", x = p33, y = Inf,
+           label = paste0(" P33 = $", round(p33, 0)),
+           hjust = 0, vjust = 2, color = "#4CAF50", fontface = "bold") +
+  annotate("text", x = p67, y = Inf,
+           label = paste0(" P67 = $", round(p67, 0)),
+           hjust = 0, vjust = 2, color = "#F44336", fontface = "bold") +
+  labs(title    = "Distribución del precio por noche con puntos de corte",
+       subtitle = "Verde = límite Económica/Intermedia | Rojo = límite Intermedia/Cara",
+       x = "Precio por noche (USD)", y = "Frecuencia") +
+  theme_minimal()
+```
+El histograma con los puntos de corte marcados permite validar visualmente que los límites elegidos tienen sentido en el contexto de la distribución. La línea verde en P33 = 136 cae justo en la zona donde el histograma comienza su descenso desde el pico máximo, lo que significa que el corte entre Económica e Intermedia separa las propiedades más populares y accesibles del mercado del resto. La línea roja en P67 = 250 se ubica en la zona donde la distribución ya bajó considerablemente y empieza a aplanarse, marcando el inicio del segmento premium. Todo lo que queda a la izquierda de la línea verde corresponde a propiedades Económicas, la franja entre ambas líneas agrupa las propiedades Intermedias, y la extensa cola hacia la derecha de la línea roja representa las propiedades Caras, que aunque son menos frecuentes en cantidad, incluyen precios que pueden superar los 750 o incluso los 1,000 por noche. Una observación importante es que la mayor parte del área del histograma queda entre 0 y 250, lo que confirma que el mercado de Airbnb en este dataset está dominado por propiedades de precio bajo a medio, y que las propiedades caras son una minoría pero con una dispersión de precios muy amplia. Los cortes en 136 y 250 dividen este mercado de forma objetiva y balanceada, respaldados completamente por la forma real de la distribución.
+
+```{r}
+# Crear la variable categórica
+listings_cat <- listings_clean %>%
+  filter(!is.na(price), price > 0, price < 1000,
+         !is.na(bedrooms), bedrooms <= 10) %>%
+  select(where(is.numeric)) %>%
+  drop_na()
+
+listings_cat$precio_cat <- cut(
+  listings_cat$price,
+  breaks         = c(0, p33, p67, Inf),
+  labels         = c("Economica", "Intermedia", "Cara"),
+  include.lowest = TRUE,
+  right          = TRUE
+)
+
+#  Verificar la distribución de las categorías
+cat("\nDistribución absoluta:\n")
+print(table(listings_cat$precio_cat))
+
+cat("\nDistribución porcentual:\n")
+print(round(prop.table(table(listings_cat$precio_cat)) * 100, 1))
+
+```
+La distribución de la variable categórica precio_cat confirma que los percentiles elegidos lograron clases bien balanceadas. Las propiedades Económicas son 20,908 (34.7%), las Intermedias 20,766 (34.4%) y las Caras 18,655 (30.9%), sumando un total de 60,329 propiedades válidas. Ninguna categoría domina sobre las demás, con una diferencia máxima de apenas 4 puntos porcentuales entre la clase más grande (Económica, 34.7%) y la más pequeña (Cara, 30.9%). Este balance es importante porque un árbol de clasificación entrenado con clases muy desiguales tiende a sesgar sus predicciones hacia la clase mayoritaria, ignorando las minoritarias. El hecho de que la categoría Cara sea ligeramente menor que las otras dos es consistente con la distribución del histograma, aunque la cola derecha de precios es larga, hay menos propiedades en ese rango precisamente porque el percentil 67 en 250 captura un segmento donde la frecuencia ya es baja. En resumen, la variable precio_cat queda definida con 20,908 propiedades Económicas (hasta 136/noche), 20,766 Intermedias (entre 136 y 250/noche) y 18,655 Caras (más de 250/noche), proporcionando una base sólida y balanceada para entrenar el árbol de clasificación.
+
+```{r}
+# ráfico de barras por categoría 
+as.data.frame(table(listings_cat$precio_cat)) %>%
+  rename(Categoria = Var1, Frecuencia = Freq) %>%
+  ggplot(aes(x = Categoria, y = Frecuencia, fill = Categoria)) +
+  geom_col(show.legend = FALSE, width = 0.6) +
+  geom_text(aes(label = Frecuencia), vjust = -0.5, fontface = "bold") +
+  scale_fill_manual(values = c("Economica"  = "#4CAF50",
+                               "Intermedia" = "#FF9800",
+                               "Cara"       = "#F44336")) +
+  labs(title    = "Cantidad de propiedades por categoría de precio",
+       subtitle = "Distribución balanceada gracias al uso de percentiles",
+       x = "Categoría de precio", y = "Número de propiedades") +
+  theme_minimal()
+```
+El gráfico de barras confirma visualmente el balance logrado entre las tres categorías de precio. Las barras de Económica (verde, 20,908) e Intermedia (naranja, 20,766) son prácticamente idénticas en altura, mientras que la barra de Cara (roja, 18,655) es ligeramente más corta pero sigue siendo comparable con las otras dos. Esta similitud en las alturas es exactamente el resultado buscado al usar percentiles como criterio de corte, ninguna categoría domina visualmente sobre las demás, lo que indica que el árbol de clasificación tendrá ejemplos suficientes de cada clase para aprender sus patrones correctamente. Si los cortes hubieran sido arbitrarios, por ejemplo en 100 y 500, el gráfico mostraría barras muy desiguales con miles de propiedades en una categoría y apenas unas pocas en otra, lo que haría que el modelo ignorara las clases pequeñas. La ligera diferencia en la categoría Cara (aproximadamente 2,000 propiedades menos que las otras dos) es natural dado que la cola derecha de la distribución, aunque larga, tiene frecuencias bajas. En conjunto, este gráfico valida que la variable precio_cat está bien construida y lista para ser usada como variable respuesta en el árbol de clasificación de la siguiente actividad.
+
+```{r}
+# Boxplot por categoría para validar que los rangos tienen sentido
+ggplot(listings_cat, aes(x = precio_cat, y = price, fill = precio_cat)) +
+  geom_boxplot(show.legend = FALSE) +
+  scale_fill_manual(values = c("Economica"  = "#4CAF50",
+                               "Intermedia" = "#FF9800",
+                               "Cara"       = "#F44336")) +
+  labs(title = "Distribución del precio por categoría",
+       x = "Categoría", y = "Precio por noche (USD)") +
+  theme_minimal()
+```
+El boxplot valida que las tres categorías están bien diferenciadas y tienen sentido económico. La categoría Económica (verde) muestra una caja muy compacta y baja, con la mediana alrededor de los 100 y un rango intercuartílico muy estrecho, lo que indica que la mayoría de propiedades en este segmento tienen precios muy concentrados y predecibles, con apenas un outlier cercano a 0. La categoría Intermedia (naranja) también presenta una caja compacta pero ubicada más arriba, con la mediana alrededor de los 180 y muy poca dispersión, lo que confirma que este segmento es igualmente homogéneo en sus precios. La categoría Cara (roja) es notablemente diferente a las otras dos: su caja es mucho más grande, con la mediana alrededor de los 350, un rango intercuartílico que va aproximadamente de 300 a 500, y una cola superior que se extiende hasta los 1,000 por noche. Esta mayor dispersión en la categoría Cara es esperada, ya que el mercado premium de Airbnb es inherentemente más variable, una propiedad de lujo puede costar 300 o 1,000 dependiendo de factores muy específicos. En conjunto, el boxplot confirma que los tres segmentos son claramente distinguibles entre sí, no se solapan de forma significativa, y que los límites elegidos en 136 y 250 generan categorías con coherencia económica real.
