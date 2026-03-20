@@ -422,3 +422,28 @@ ggplot(listings_cat, aes(x = precio_cat, y = price, fill = precio_cat)) +
   theme_minimal()
 ```
 El boxplot valida que las tres categorías están bien diferenciadas y tienen sentido económico. La categoría Económica (verde) muestra una caja muy compacta y baja, con la mediana alrededor de los 100 y un rango intercuartílico muy estrecho, lo que indica que la mayoría de propiedades en este segmento tienen precios muy concentrados y predecibles, con apenas un outlier cercano a 0. La categoría Intermedia (naranja) también presenta una caja compacta pero ubicada más arriba, con la mediana alrededor de los 180 y muy poca dispersión, lo que confirma que este segmento es igualmente homogéneo en sus precios. La categoría Cara (roja) es notablemente diferente a las otras dos: su caja es mucho más grande, con la mediana alrededor de los 350, un rango intercuartílico que va aproximadamente de 300 a 500, y una cola superior que se extiende hasta los 1,000 por noche. Esta mayor dispersión en la categoría Cara es esperada, ya que el mercado premium de Airbnb es inherentemente más variable, una propiedad de lujo puede costar 300 o 1,000 dependiendo de factores muy específicos. En conjunto, el boxplot confirma que los tres segmentos son claramente distinguibles entre sí, no se solapan de forma significativa, y que los límites elegidos en 136 y 250 generan categorías con coherencia económica real.
+
+
+### ACTIVIDAD 7 – Preparación de datos para el árbol de clasificación
+
+```{r}
+
+set.seed(123)
+idx_clas   <- sample(nrow(listings_cat), size = 0.8 * nrow(listings_cat))
+train_clas <- listings_cat[ idx_clas, ]
+test_clas  <- listings_cat[-idx_clas, ]
+
+train_clas$price <- NULL
+test_clas$price  <- NULL
+
+test_resp_cat <- test_clas$precio_cat
+
+cat("Entrenamiento:", nrow(train_clas), "observaciones\n")
+cat("Prueba:       ", nrow(test_clas),  "observaciones\n")
+cat("\nDistribución en train:\n")
+print(table(train_clas$precio_cat))
+cat("\nDistribución en test:\n")
+print(table(test_clas$precio_cat))
+```
+
+La división de los datos para clasificación quedó con 48,263 observaciones en entrenamiento y 12,066 en prueba, manteniendo la proporción 80/20 usada en las actividades anteriores. Lo más importante es verificar que el balance entre las tres categorías se preserve en ambos conjuntos. En entrenamiento, Económica tiene 16,689 propiedades, Intermedia 16,627 y Cara 14,947, manteniendo proporciones muy similares entre sí. En el conjunto de prueba ocurre lo mismo: Económica con 4,219, Intermedia con 4,139 y Cara con 3,708, reflejando la misma distribución balanceada del dataset original. Este balance en ambos conjuntos es clave porque garantiza que el árbol aprenda por igual los patrones de las tres categorías durante el entrenamiento, y que la evaluación sobre el conjunto de prueba sea justa y representativa para cada clase. Si una categoría tuviera muy pocas observaciones en el conjunto de prueba, las métricas de evaluación serían poco confiables para esa clase específica.
