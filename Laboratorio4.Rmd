@@ -272,3 +272,47 @@ ggplot(comparacion_prof,
 
 El gráfico de barras horizontales confirma visualmente lo que la tabla mostró numéricamente. La barra de Profundidad 3 es la más larga con un RMSE de 136.63, siendo el modelo que más se equivoca al predecir el precio por noche, lo cual era esperado ya que con solo 3 niveles el árbol no tiene suficiente capacidad para capturar la variabilidad del precio. Le sigue Profundidad 5 con 132.89, mostrando una mejora moderada al incorporar variables adicionales como la ubicación geográfica (`longitude`). Las barras de Profundidad 10 y **Base (defecto) son idénticas con 130.84, siendo los modelos más precisos de los cuatro. Esto evidencia que el algoritmo `rpart` por defecto ya encuentra internamente una profundidad cercana a la óptima para este conjunto de datos, y forzar mayor profundidad no genera mejoras adicionales. La diferencia total entre el peor y el mejor modelo es de apenas $5.79 en RMSE, lo que sugiere que la limitación no está en la profundidad del árbol sino en las variables disponibles, ya que el precio de Airbnb depende también de factores cualitativos como las amenidades, la reputación del anfitrión o la calidad de las fotos que no están capturados en las variables numéricas del dataset.
 
+
+# 5. Compare los resultados con el modelo de regresión lineal de la hoja anterior, ¿cuál lo hizo mejor?
+```{r}
+modelo_lineal <- lm(price ~ ., data = train_data_model)
+pred_lineal   <- predict(modelo_lineal, newdata = test_data_model)
+pred_lineal   <- pmax(pred_lineal, 0)  # evitar precios negativos
+
+rmse_lineal <- RMSE(pred_lineal, test_data_model$price)
+mae_lineal  <- MAE(pred_lineal,  test_data_model$price)
+r2_lineal   <- cor(pred_lineal,  test_data_model$price)^2
+
+# Tabla comparativa
+comparacion_final <- data.frame(
+  Modelo = c("Regresión Lineal", 
+             "Árbol base (defecto)",
+             "Árbol Profundidad 3",
+             "Árbol Profundidad 5",
+             "Árbol Profundidad 10"),
+  RMSE = round(c(rmse_lineal, rmse_arbol, 
+                 rmse_prof3, rmse_prof5, rmse_prof10), 2),
+  MAE  = round(c(mae_lineal,  mae_arbol,  
+                 mae_prof3,  mae_prof5,  mae_prof10),  2),
+  R2   = round(c(r2_lineal,   r2_arbol,   
+                 r2_prof3,   r2_prof5,   r2_prof10),   4)
+)
+
+print(comparacion_final)
+```
+La tabla comparativa muestra que los árboles de regresión superan a la regresión lineal en este conjunto de datos. La regresión lineal obtiene un RMSE de 136.11 y un R² de 0.3659, resultados muy similares al peor árbol (Profundidad 3 con RMSE=136.63), lo que indica que ambos modelos simples tienen una capacidad predictiva comparable y limitada. Los mejores modelos son el árbol base y el de Profundidad 10, ambos con RMSE=130.84, MAE=90.38 y R²=0.4151, superando a la regresión lineal en aproximadamente $5.27 de error y 5 puntos porcentuales en R². Esta diferencia se explica porque el árbol de regresión puede capturar relaciones no lineales entre las variables y el precio, como el hecho de que pasar de 1 a 2 baños no sube el precio en la misma proporción que pasar de 3 a 4, algo que la regresión lineal asume constante y por eso falla. Sin embargo, ningún modelo supera un R² de 0.42, lo que indica que con las variables numéricas disponibles existe un techo de precisión, y para mejorar significativamente se necesitaría incorporar variables categóricas como el tipo de propiedad, el vecindario o las amenidades. El ganador de esta comparación es el árbol de regresión con parámetros por defecto o con profundidad 10, siendo este último el recomendado por ser explícito y reproducible.
+
+```{r grafico-comparacion, fig.width=20}
+# Gráfico comparativo
+ggplot(comparacion_final,
+       aes(x = reorder(Modelo, RMSE), y = RMSE, fill = Modelo)) +
+  geom_col(show.legend = FALSE, width = 0.6) +
+  geom_text(aes(label = RMSE), hjust = -0.15, fontface = "bold") +
+  coord_flip() +
+  labs(title    = "Comparación de RMSE – Regresión Lineal vs Árboles de Regresión",
+       subtitle = "Menor RMSE = mejor modelo",
+       x = NULL, y = "RMSE (USD)") +
+  theme_minimal()
+```
+El gráfico permite comparar visualmente los cinco modelos de menor a mayor RMSE. En la parte superior se ubican los dos modelos con peor desempeño: Árbol Profundidad 3 con 136.63 y Regresión Lineal con 136.11, cuyas barras son prácticamente del mismo largo, evidenciando que ambos modelos simples tienen una capacidad predictiva muy similar y limitada. En el centro aparece Árbol Profundidad 5 con 132.89, mostrando una mejora visible al incorporar la variable geográfica en sus divisiones. En la parte inferior, con las barras más cortas y por tanto los mejores resultados, se encuentran Árbol Profundidad 10 y Árbol base (defecto) ambos con 130.84, siendo los ganadores claros de la comparación. Lo más relevante del gráfico es que la Regresión Lineal queda en segunda posición de peor a mejor, superada por tres de los cuatro árboles evaluados, lo que demuestra que modelar el precio de Airbnb requiere capturar relaciones no lineales que la regresión lineal no puede representar. La diferencia visual entre las barras no es dramática, pero es consistente: los árboles con mayor flexibilidad siempre superan al modelo lineal en este conjunto de datos.
+
