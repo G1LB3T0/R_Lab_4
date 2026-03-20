@@ -9,22 +9,183 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
-```
-
 ## Including Plots
-
-You can also embed plots, for example :
 
 ```{r pressure, echo=FALSE}
 plot(pressure)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+#Librerias a utilizar
+```{r}
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(stringr)
+library(readr)
+library(nortest)
+library(caret)
+library(car)
+library(glmnet)
+library(rpart)
+library(rpart.plot)
+```
+## Link de GITHUB
+
+<https://github.com/G1LB3T0/R_LAB_4>
+
+# Cargar datos
+
+```{r}
+load("datos/listings.RData")
+```
+
+### 1. Use los mismos conjuntos de entrenamiento y prueba que usó para los modelos de regresión lineal en la entrega anterior.
+
+# Preprocesamiento
+```{r}
+listings_clean <- listings %>%
+  mutate(price = parse_number(price)) %>%
+  select(-c(listing_url, scrape_id, picture_url, host_url, host_thumbnail_url,
+            host_picture_url, description, neighborhood_overview, host_about, amenities))
+
+```
+
+# Division de datos
+```{r}
+set.seed(123)
+
+total_filas <- nrow(listings_clean)
+indice_train <- sample(1:total_filas, size = 0.8 * total_filas)
+
+train_data <- listings_clean[ indice_train, ]
+test_data  <- listings_clean[-indice_train, ]
+
+
+train_data_model <- train_data %>%
+  filter(!is.na(price), price < 1000,
+         !is.na(bedrooms), bedrooms <= 10,
+         !is.na(bathrooms), !is.na(accommodates)) %>%
+  select(price, accommodates, bedrooms, bathrooms,
+         number_of_reviews, review_scores_rating) %>%
+  drop_na()
+
+test_data_model <- test_data %>%
+  filter(!is.na(price), price < 1000,
+         !is.na(bedrooms), bedrooms <= 10,
+         !is.na(bathrooms), !is.na(accommodates)) %>%
+  select(price, accommodates, bedrooms, bathrooms,
+         number_of_reviews, review_scores_rating) %>%
+  drop_na()
+
+```
+
+# Verificar
+```{r}
+dim(train_data_model)  
+dim(test_data_model)
+```
+
+Se reutilizan exactamente los mismos conjuntos de entrenamiento y prueba generados. El conjunto de entrenamiento contiene aproximadamente 48,442 observaciones y el de prueba 12,173, ambos con las 6 variables seleccionadas en la entrega anterior: price, accommodates, bedrooms, bathrooms, number_of_reviews y review_scores_rating.
+
+
+### 2. Elabore un árbol de regresión para predecir el precio de las casas por noche usando todas las variables.
+```{r}
+train_arbol <- train_data %>%
+  filter(!is.na(price), price < 1000,
+         !is.na(bedrooms), bedrooms <= 10) %>%
+  select(where(is.numeric)) %>%  # Tomar SOLO columnas numéricas
+  drop_na()
+
+test_arbol <- test_data %>%
+  filter(!is.na(price), price < 1000,
+         !is.na(bedrooms), bedrooms <= 10) %>%
+  select(where(is.numeric)) %>%
+  drop_na()
+```
+
+```{r}
+cat("Variables disponibles para el árbol:", ncol(train_arbol), "\n")
+cat("Observaciones en entrenamiento:", nrow(train_arbol), "\n")
+cat("Observaciones en prueba:", nrow(test_arbol), "\n")
+
+
+names(train_arbol)
+```
+
+# Entrenamiento del modelo
+```{r}
+arbol_regresion <- rpart(
+  price ~ .,
+  data   = train_arbol,
+  method = "anova"  
+)
+
+
+summary(arbol_regresion)
+```
+
+
+# Grafico
+```{r}
+rpart.plot(
+  arbol_regresion,
+  type          = 4,    
+  extra         = 101,  
+  fallen.leaves = TRUE,
+  main          = "Árbol de Regresión - Precio por Noche (Todas las Variables)",
+  cex           = 0.6   
+)
+
+
+printcp(arbol_regresion)
+plotcp(arbol_regresion)
+```
+
+### 3. Úselo para predecir y analice el resultado. ¿Qué tal lo hizo?
+
+```{r}
+pred_arbol <- predict(arbol_regresion, newdata = test_arbol)
+
+rmse_arbol <- RMSE(pred_arbol, test_arbol$price)
+mae_arbol  <- MAE(pred_arbol,  test_arbol$price)
+r2_arbol   <- cor(pred_arbol,  test_arbol$price)^2
+
+cat("========================================\n")
+cat("Resultados del Árbol de Regresión\n")
+cat("(Parámetros por defecto - Todas las variables)\n")
+cat("========================================\n")
+cat("RMSE: $", round(rmse_arbol, 2), "\n")
+cat("MAE:  $", round(mae_arbol,  2), "\n")
+cat("R²:      ", round(r2_arbol,  4), "\n")
+
+
+ggplot(data.frame(real = test_arbol$price, pred = pred_arbol),
+       aes(x = real, y = pred)) +
+  geom_point(alpha = 0.3, color = "#4682B4") +
+  geom_abline(slope = 1, intercept = 0, 
+              color = "red", linewidth = 1.2) +
+  labs(title = "Árbol de Regresión: Precio Real vs prediccion",
+       subtitle = "La línea roja representa una predicción perfecta",
+       x = "Precio Real ($)",
+       y = "Precio prediccion ($)") +
+  theme_minimal()
+
+
+importancia <- as.data.frame(arbol_regresion$variable.importance)
+importancia$variable <- rownames(importancia)
+colnames(importancia)[1] <- "importancia"
+
+ggplot(importancia, aes(x = reorder(variable, importancia), y = importancia)) +
+  geom_col(fill = "#2E8B57") +
+  coord_flip() +
+  labs(title = "Importancia de Variables - Árbol de Regresión",
+       x = "Variable",
+       y = "Importancia") +
+  theme_minimal()
+```
+
+El gráfico revela que el árbol identificó automáticamente que las variables de tamaño físico de la propiedad son las más determinantes para predecir el precio. bathrooms resultó ser el predictor más importante por un margen considerable, seguido de accommodates y bedrooms, y en cuarto lugar beds.
+
+Este hallazgo es consistente con lo encontrado, donde la capacidad y el espacio físico dominaban la relación con el precio. Curiosamente, estimated_revenue_l365d y longitude también aparecen con importancia moderada, sugiriendo que la ubicación geográfica y el historial de ingresos aportan información adicional que la regresión lineal simple no capturaba.
+
