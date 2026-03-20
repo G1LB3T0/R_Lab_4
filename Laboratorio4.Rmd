@@ -1,8 +1,10 @@
 ---
 title: "Laboratorio 4"
-author: "Luis Gonzalez Joel Jaquez"
+author: "Luis Gonzalez Joel Jaquez Fabian Morales"
 date: "`r Sys.Date()`"
-output: pdf_document
+output:
+  pdf_document:
+    latex_engine: xelatex
 ---
 
 ```{r setup, include=FALSE}
@@ -257,7 +259,7 @@ print(comparacion_prof)
 ```
 La tabla revela un resultado interesante y es que el modelo base (parámetros por defecto de rpart) y el modelo de profundidad 10 obtienen exactamente las mismas métricas (RMSE = 130.84, MAE = 90.38, R² = 0.4151), lo que confirma lo observado visualmente en los árboles — a partir de cierta profundidad el modelo ya no encuentra divisiones adicionales que mejoren significativamente la predicción. El peor modelo es el de profundidad 3 con RMSE = 136.63 y R² = 0.3622, lo que era esperado dado que su estructura simplificada no captura suficientes patrones del precio. El modelo de profundidad 5 queda en un punto intermedio (RMSE = 132.89, R² = 0.3966), mejorando al de profundidad 3 pero sin llegar al nivel del modelo base. En general, ninguno de los modelos alcanza un R² superior a 0.42, lo que indica que el precio por noche en Airbnb tiene una variabilidad considerable que las variables numéricas disponibles no logran explicar completamente por sí solas. El mejor modelo para predecir el precio por noche es el árbol base o el de profundidad 10, siendo este último preferible porque hace explícita la profundidad usada y produce resultados idénticos de forma controlada y reproducible.
 
-```{r grafico-comparacion, fig.width=20}
+```{r grafico-comparacion1, fig.width=20}
 # Gráfico comparativo 
 ggplot(comparacion_prof,
        aes(x = reorder(Modelo, RMSE), y = RMSE, fill = Modelo)) +
@@ -346,7 +348,7 @@ cat("Punto de corte superior (P67):", round(p67, 2), "USD/noche\n")
 ```
 Los puntos de corte calculados a partir de los percentiles 33 y 67 del precio por noche son P33 = 136 USD y P67 = 250 USD. Esto significa que la variable categórica `precio_cat` queda definida de la siguiente manera: las propiedades Económicas son aquellas con un precio por noche de hasta 136, representando el tercio más accesible del mercado y abarcando la zona de mayor concentración del histograma; las propiedades Intermedias tienen un precio entre 136 y 250 por noche, cubriendo el segmento medio donde la frecuencia ya empieza a descender y las propiedades Caras son aquellas con precio superior a 250 por noche, correspondiendo al tercio más costoso donde las frecuencias son bajas pero los precios pueden alcanzar los 1,000. Estos límites tienen un fundamento claro en los datos: el corte en 136 coincide aproximadamente con la mediana visual del histograma (zona de mayor densidad), mientras que el corte en 250 marca el punto donde la distribución comienza a aplanarse notablemente. Al usar percentiles en lugar de valores arbitrarios, se garantiza que cada categoría contenga aproximadamente el mismo número de propiedades, lo que evita que el árbol de clasificación quede sesgado hacia una clase dominante y mejora su capacidad para aprender patrones en los tres segmentos de precio.
 
-```{r fig.width=20}
+```{r bloque1, fig.width=20}
 # Histograma con los cortes marcados
 ggplot(data.frame(price = precios_validos), aes(x = price)) +
   geom_histogram(fill = "#5C6BC0", color = "white", bins = 60) +
@@ -459,7 +461,7 @@ arbol_clas <- rpart(
   method = "class"
 )
 
-# Gráfica del árbol – requerida por el enunciado
+
 rpart.plot(
   arbol_clas,
   type          = 4,
@@ -489,5 +491,29 @@ imp_clas %>%
 El árbol de clasificación logra separar las tres categorías usando principalmente variables de tamaño físico e ingresos estimados. La primera división ocurre en la raíz con bathrooms < 1.8, separando el 62% de las propiedades (nodo izquierdo, mayoría Económicas) del 38% restante (nodo derecho, mayoría Caras), confirmando que la cantidad de baños es el factor más determinante para clasificar el precio de una propiedad. En el lado izquierdo, el árbol usa estimated_revenue_l365d y accommodates para refinar la clasificación, llegando a hojas donde propiedades pequeñas con ingresos bajos son clasificadas como Económicas (71% de certeza en la hoja más pura) y propiedades más grandes con mayor ocupación tienden a ser Intermedias. En el lado derecho, propiedades con más de 1.8 baños se subdividen nuevamente por accommodates y estimated_revenue_l365d, con las hojas más a la derecha clasificando propiedades como Caras con hasta 99% de certeza. El gráfico de importancia de variables complementa esta lectura: estimated_revenue_l365d, accommodates y bathrooms dominan claramente con importancias cercanas a 4,000, muy por encima del resto. Le siguen beds, estimated_occupancy_l365d y bedrooms con importancias intermedias, mientras que variables como reviews_per_month y calculated_host_listings_count_entire_homes tienen una contribución marginal. Esto es coherente con la lógica del negocio: el tamaño de la propiedad y su historial de ingresos son los factores que más determinan si una propiedad pertenece al segmento económico, intermedio o caro en Airbnb.
 
 
+## ACTIVIDAD 7 – Evaluación del árbol de clasificación
 
+```{r}
+
+# Predicción sobre el conjunto de prueba
+pred_clas <- predict(arbol_clas, newdata = test_clas, type = "class")
+
+# Matriz de confusión completa
+cf <- confusionMatrix(pred_clas, test_resp_cat)
+print(cf)
+
+cat("\nExactitud (Accuracy):", round(cf$overall["Accuracy"] * 100, 2), "%\n")
+
+# Visualización de la matriz de confusión
+as.data.frame(cf$table) %>%
+  ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
+  geom_tile() +
+  geom_text(aes(label = Freq), fontface = "bold", size = 5) +
+  scale_fill_gradient(low = "white", high = "#3F51B5") +
+  labs(title    = "Matriz de Confusión – Árbol de Clasificación",
+       subtitle = "Filas = predicción | Columnas = valor real",
+       x = "Categoría real", y = "Categoría predicha") +
+  theme_minimal()
+```
+El árbol de clasificación alcanza una exactitud del 69.24%, lo que significa que clasifica correctamente aproximadamente 7 de cada 10 propiedades. La diagonal principal de la matriz (3,440 + 2,130 + 2,784) representa los aciertos, mientras que los valores fuera de ella son los errores. La clase donde el modelo se equivoca más es Intermedia, con una sensibilidad de apenas 51.46%, lo cual tiene sentido: las propiedades intermedias comparten características con ambos extremos, haciendo que el árbol las confunda frecuentemente con Económicas (593 casos) o con Caras (686 casos). Por el contrario, el modelo se equivoca menos en la clase Económica, con una sensibilidad del 81.54% y una exactitud balanceada del 82.24%, lo que indica que las propiedades baratas tienen características muy distintivas que el árbol identifica con facilidad. La clase Cara tiene un desempeño intermedio con sensibilidad del 75.08%, aunque su especificidad es la más alta (86.91%), lo que significa que cuando el modelo predice que una propiedad es Cara, generalmente acierta. El error más grave desde el punto de vista del negocio es clasificar 238 propiedades Caras como Económicas y 186 Económicas como Caras, ya que implicaría recomendar propiedades con precios muy alejados del presupuesto del cliente. El coeficiente Kappa de 0.538 indica una concordancia moderada-buena más allá del azar, confirmando que el modelo aporta valor real aunque tiene margen de mejora, especialmente en el segmento Intermedio.
 
