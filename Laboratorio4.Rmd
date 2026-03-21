@@ -561,3 +561,36 @@ ggplot(metricas_long, aes(x = Clase, y = Valor, fill = Metrica)) +
   theme_minimal()
 ```
 El gráfico de barras agrupadas permite comparar visualmente las cuatro métricas para cada categoría. Lo primero que salta a la vista es que la columna de Intermedia tiene todas sus barras notablemente más bajas que las otras dos categorías, especialmente la sensibilidad (51.46%) y el F1 (56.44%), confirmando que este es el segmento más difícil de clasificar de forma correcta. Las categorías Cara y Económica muestran un comportamiento mucho más parejo entre sí ya que ambas tienen especificidades altas (86.91% y 82.94% respectivamente) lo que indica que el modelo es bueno evitando falsos positivos en ambos extremos del mercado. Ahora un patrón interesante es que la Especificidad (verde) es consistentemente la métrica más alta en las tres categorías, lo que significa que el modelo es mejor descartando clases incorrectas que identificando la clase correcta. La Precisión (naranja) es la métrica más baja para Económica e Intermedia, indicando que cuando el modelo predice esas clases comete más errores de lo deseable. En contraste, para la categoría Cara la precisión (71.79%) y la sensibilidad (75.08%) están más equilibradas, resultando en el F1 más alto de las tres clases (73.40%). En resumen, el modelo funciona mejor en los extremos del mercado y tiene mayor dificultad en el segmento intermedio, lo que sugiere que los límites de 136 y 250 generan una zona de ambigüedad natural que ningún árbol de decisión simple puede resolver completamente.
+
+# 9. Haga un análisis de la eficiencia del algoritmo usando una matriz de confusión para el árbol de clasificación. Tenga en cuenta la efectividad, donde el algoritmo se equivocó más, donde
+se equivocó menos y la importancia que tienen los errores.
+
+```{r}
+# Errores por clase
+errores <- data.frame(
+  Clase         = c("Económica", "Intermedia", "Cara"),
+  Correctos     = c(3440, 2130, 2784),
+  Errores_total = c(593+186, 1101+686, 908+238)
+)
+
+errores$Tasa_error <- round(errores$Errores_total / 
+                            (errores$Correctos + errores$Errores_total) * 100, 2)
+
+print(errores)
+```
+La tabla de errores por clase confirma y cuantifica con precisión dónde falla el modelo. La categoría donde el algoritmo se equivoca menos es Económica con una tasa de error del 18.46%, es decir, de 4,219 propiedades económicas en el test solo clasifica mal 779, lo que refleja que las propiedades baratas tienen características muy distintivas y fáciles de identificar para el árbol. La categoría Cara tiene una tasa de error intermedia del 29.16%, con 1,146 errores sobre 3,930 propiedades, un desempeño aceptable considerando la alta dispersión de precios que existe dentro de este segmento. La categoría donde el algoritmo se equivoca más es Intermedia con una tasa de error del 45.62%, lo que significa que casi 1 de cada 2 propiedades intermedias es clasificada incorrectamente, ya sea como Económica o como Cara. Respecto a la importancia de los errores, no todos tienen el mismo peso para el negocio de SmartStay Advisors, porque el error más grave es confundir una propiedad Cara con Económica (238 casos) o viceversa (186 casos), esto implicaría recomendar al cliente una propiedad con un precio por noche muy alejado de su presupuesto, dañando la confianza en el servicio. En cambio, confundir Intermedia con Económica o Cara es menos crítico porque la diferencia de precio es menor y más tolerable para el cliente.
+
+
+```{r}
+ggplot(errores, aes(x = Clase, y = Tasa_error, fill = Clase)) +
+  geom_col(show.legend = FALSE, width = 0.6) +
+  geom_text(aes(label = paste0(Tasa_error, "%")), 
+            vjust = -0.5, fontface = "bold") +
+  scale_fill_manual(values = c("Económica"  = "#4CAF50",
+                               "Intermedia" = "#F44336",
+                               "Cara"       = "#FF9800")) +
+  labs(title = "Tasa de error por categoría",
+       x = "Categoría", y = "% de errores") +
+  theme_minimal()
+```
+El gráfico de barras hace evidente de forma visual la disparidad en la tasa de error entre las tres categorías. La barra verde de Económica es la más baja con 18.46%, destacando claramente como la clase mejor clasificada por el modelo. La barra naranja de Cara se ubica en un nivel intermedio con 29.16%, casi el doble que Económica pero todavía en un rango aceptable. La barra roja de Intermedia domina el gráfico con 45.62%, siendo casi 2.5 veces mayor que la de Económica y evidenciando que este segmento es el talón de Aquiles del modelo. Esta progresión de izquierda a derecha en términos de dificultad de clasificación tiene una explicación bien interesante que se mencionó antes y es que las propiedades Económicas tienen características muy claras y homogéneas (pocas habitaciones, pocos baños, baja capacidad), las propiedades Caras también son distinguibles aunque con mayor variabilidad interna, pero las propiedades Intermedias están literalmente en el medio, compartiendo algunas características con las económicas y otras con las caras dependiendo de la combinación específica de variables. Para SmartStay Advisors esto implica que el modelo es confiable para identificar propiedades de los extremos del mercado, pero debe usarse con cautela al clasificar propiedades en el rango de 136 a 250 por noche, donde el riesgo de clasificación incorrecta es significativamente mayor.
