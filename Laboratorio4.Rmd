@@ -633,4 +633,49 @@ cat("Kappa árbol con CV:             ", round(cf_cv$overall["Kappa"], 4), "\n")
 
 El árbol con validación cruzada tiene exactamente la misma estructura visual que el árbol base, usando las mismas variables (bathrooms, estimated_revenue_l365d, accommodates, estimated_occupancy_l365d) y los mismos puntos de división. Sin embargo, los resultados de la predicción muestran que no le fue mejor: el Accuracy bajó de 69.24% a 66.28% y el Kappa de 0.538 a 0.4944. Esto puede parecer contradictorio, ya que la validación cruzada generalmente mejora la generalización, pero en este caso indica que el árbol base ya tenía una configuración cercana a la óptima para este dataset y la validación cruzada seleccionó una profundidad ligeramente más conservadora que sacrificó precisión. En conclusión, para este problema el árbol base sin validación cruzada sigue siendo el mejor modelo de clasificación hasta ahora.
 
+## Actividad 11 – Tuneo de profundidad del árbol de clasificación
+
+```{r}
+profundidades_clas <- expand.grid(maxdepth = c(3, 5, 8, 12))
+
+set.seed(123)
+arbol_clas_tuneado <- train(
+  precio_cat ~ .,
+  data      = train_clas,
+  method    = "rpart2",
+  tuneGrid  = profundidades_clas,
+  trControl = control_cv,
+  metric    = "Accuracy"
+)
+
+arbol_clas_tuneado
+plot(arbol_clas_tuneado,
+     main = "Accuracy por profundidad – Árbol de Clasificación")
+```
+El gráfico muestra una tendencia clara y consistente: a mayor profundidad del árbol, mayor Accuracy en la validación cruzada. La profundidad 3 obtiene el Accuracy más bajo (~61%), y la curva sube de forma continua hasta la profundidad 12 que alcanza ~69%. A diferencia del árbol de regresión donde la curva se aplanaba a partir de cierta profundidad, aquí no se observa un punto de estabilización dentro del rango explorado, lo que sugiere que el modelo sigue aprendiendo patrones útiles con cada nivel adicional. Esto llevó a que la validación cruzada seleccionara profundidad 12 como la óptima.
+
+
+```{r}
+# Predicciones por cada profundidad y comparación
+pred_tuneado_clas <- predict(arbol_clas_tuneado, newdata = test_clas)
+cf_tuneado        <- confusionMatrix(pred_tuneado_clas, test_resp_cat)
+
+mejor_prof_clas <- arbol_clas_tuneado$bestTune$maxdepth
+
+comparacion_clas <- data.frame(
+  Modelo   = c("Árbol base", "Árbol CV", 
+               paste0("Árbol tuneado (prof. ", mejor_prof_clas, ")")),
+  Accuracy = round(c(cf$overall["Accuracy"],
+                     cf_cv$overall["Accuracy"],
+                     cf_tuneado$overall["Accuracy"]) * 100, 2),
+  Kappa    = round(c(cf$overall["Kappa"],
+                     cf_cv$overall["Kappa"],
+                     cf_tuneado$overall["Kappa"]), 4)
+)
+
+print(comparacion_clas)
+```
+
+La tabla final confirma que el árbol base y el árbol tuneado con profundidad 12 empatan con el mejor Accuracy de 69.24% y Kappa de 0.538, mientras que el árbol con validación cruzada sin tuneo de profundidad queda rezagado con 66.28% y Kappa de 0.4944. Esto es coherente con el gráfico: la validación cruzada por sí sola eligió una profundidad subóptima, pero al forzar explícitamente profundidad 12 mediante el tuneo, el modelo recupera el desempeño del árbol base. La conclusión es que el mejor modelo de clasificación es el árbol con profundidad 12, ya que alcanza el mismo Accuracy que el árbol base pero de forma controlada y explícita, siendo por tanto el más recomendable para producción.
+
 
