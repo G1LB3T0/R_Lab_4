@@ -594,3 +594,43 @@ ggplot(errores, aes(x = Clase, y = Tasa_error, fill = Clase)) +
   theme_minimal()
 ```
 El gráfico de barras hace evidente de forma visual la disparidad en la tasa de error entre las tres categorías. La barra verde de Económica es la más baja con 18.46%, destacando claramente como la clase mejor clasificada por el modelo. La barra naranja de Cara se ubica en un nivel intermedio con 29.16%, casi el doble que Económica pero todavía en un rango aceptable. La barra roja de Intermedia domina el gráfico con 45.62%, siendo casi 2.5 veces mayor que la de Económica y evidenciando que este segmento es el talón de Aquiles del modelo. Esta progresión de izquierda a derecha en términos de dificultad de clasificación tiene una explicación bien interesante que se mencionó antes y es que las propiedades Económicas tienen características muy claras y homogéneas (pocas habitaciones, pocos baños, baja capacidad), las propiedades Caras también son distinguibles aunque con mayor variabilidad interna, pero las propiedades Intermedias están literalmente en el medio, compartiendo algunas características con las económicas y otras con las caras dependiendo de la combinación específica de variables. Para SmartStay Advisors esto implica que el modelo es confiable para identificar propiedades de los extremos del mercado, pero debe usarse con cautela al clasificar propiedades en el rango de 136 a 250 por noche, donde el riesgo de clasificación incorrecta es significativamente mayor.
+
+## Actividad 10 – Árbol de clasificación con validación cruzada
+
+```{r}
+control_cv <- trainControl(method = "cv", number = 10, verboseIter = FALSE)
+
+set.seed(123)
+arbol_clas_cv <- train(
+  precio_cat ~ .,
+  data      = train_clas,
+  method    = "rpart2",
+  trControl = control_cv,
+  metric    = "Accuracy"
+)
+
+arbol_clas_cv
+rpart.plot(arbol_clas_cv$finalModel,
+           type          = 4,
+           extra         = 104,
+           fallen.leaves = TRUE,
+           main          = "Árbol de Clasificación – Validación Cruzada",
+           cex           = 0.65,
+           box.palette   = list("#4CAF50", "#FF9800", "#F44336"))
+```
+
+```{r}
+# Predicción y comparación
+pred_cv <- predict(arbol_clas_cv, newdata = test_clas)
+cf_cv   <- confusionMatrix(pred_cv, test_resp_cat)
+print(cf_cv)
+
+cat("\nAccuracy árbol base:            ", round(cf$overall["Accuracy"]    * 100, 2), "%\n")
+cat("Accuracy árbol con CV:          ", round(cf_cv$overall["Accuracy"]  * 100, 2), "%\n")
+cat("Kappa árbol base:               ", round(cf$overall["Kappa"],    4), "\n")
+cat("Kappa árbol con CV:             ", round(cf_cv$overall["Kappa"], 4), "\n")
+```
+
+El árbol con validación cruzada tiene exactamente la misma estructura visual que el árbol base, usando las mismas variables (bathrooms, estimated_revenue_l365d, accommodates, estimated_occupancy_l365d) y los mismos puntos de división. Sin embargo, los resultados de la predicción muestran que no le fue mejor: el Accuracy bajó de 69.24% a 66.28% y el Kappa de 0.538 a 0.4944. Esto puede parecer contradictorio, ya que la validación cruzada generalmente mejora la generalización, pero en este caso indica que el árbol base ya tenía una configuración cercana a la óptima para este dataset y la validación cruzada seleccionó una profundidad ligeramente más conservadora que sacrificó precisión. En conclusión, para este problema el árbol base sin validación cruzada sigue siendo el mejor modelo de clasificación hasta ahora.
+
+
