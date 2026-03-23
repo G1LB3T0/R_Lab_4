@@ -31,6 +31,7 @@ library(car)
 library(glmnet)
 library(rpart)
 library(rpart.plot)
+library(randomForest)
 ```
 ## Link de GITHUB
 
@@ -678,4 +679,163 @@ print(comparacion_clas)
 
 La tabla final confirma que el árbol base y el árbol tuneado con profundidad 12 empatan con el mejor Accuracy de 69.24% y Kappa de 0.538, mientras que el árbol con validación cruzada sin tuneo de profundidad queda rezagado con 66.28% y Kappa de 0.4944. Esto es coherente con el gráfico: la validación cruzada por sí sola eligió una profundidad subóptima, pero al forzar explícitamente profundidad 12 mediante el tuneo, el modelo recupera el desempeño del árbol base. La conclusión es que el mejor modelo de clasificación es el árbol con profundidad 12, ya que alcanza el mismo Accuracy que el árbol base pero de forma controlada y explícita, siendo por tanto el más recomendable para producción.
 
+## Actividad 12 – Predicción y Clasificación.
 
+# Random Forest para REGRESIÓN (predecir precio)
+```{r}
+set.seed(123)
+rf_regresion <- randomForest(
+  price ~ .,
+  data = train_arbol,
+  ntree      = 100,        
+  mtry       = floor(sqrt(ncol(train_arbol) - 1)), 
+  importance = TRUE
+)
+
+print(rf_regresion)
+
+
+pred_rf_reg <- predict(rf_regresion, newdata = test_arbol)
+
+rmse_rf_reg <- RMSE(pred_rf_reg, test_arbol$price)
+mae_rf_reg  <- MAE(pred_rf_reg,  test_arbol$price)
+r2_rf_reg   <- cor(pred_rf_reg,  test_arbol$price)^2
+
+cat("=== Random Forest – Regresión ===\n")
+cat("RMSE: $", round(rmse_rf_reg, 2), "\n")
+cat("MAE:  $", round(mae_rf_reg,  2), "\n")
+cat("R²:      ", round(r2_rf_reg,  4), "\n")
+
+
+ggplot(data.frame(real = test_arbol$price, pred = pred_rf_reg),
+       aes(x = real, y = pred)) +
+  geom_point(alpha = 0.3, color = "#E91E63") +
+  geom_abline(slope = 1, intercept = 0,
+              color = "red", linewidth = 1.2) +
+  labs(title    = "Random Forest – Precio Real vs Predicho",
+       subtitle = "La línea roja representa una predicción perfecta",
+       x = "Precio Real ($)", y = "Precio Predicho ($)") +
+  theme_minimal()
+
+# Importancia de variables
+imp_rf_reg <- as.data.frame(importance(rf_regresion))
+imp_rf_reg$variable <- rownames(imp_rf_reg)
+
+ggplot(imp_rf_reg, aes(x = reorder(variable, `%IncMSE`), y = `%IncMSE`)) +
+  geom_col(fill = "#E91E63") +
+  coord_flip() +
+  labs(title = "Importancia de Variables – Random Forest Regresión",
+       subtitle = "% de incremento en MSE al permutar la variable",
+       x = "Variable", y = "% Incremento en MSE") +
+  theme_minimal()
+
+
+comparacion_reg_final <- data.frame(
+  Modelo = c("Regresión Lineal",
+             "Árbol base (defecto)",
+             "Árbol Profundidad 3",
+             "Árbol Profundidad 5",
+             "Árbol Profundidad 10",
+             "Random Forest"),
+  RMSE = round(c(rmse_lineal, rmse_arbol,
+                 rmse_prof3, rmse_prof5, rmse_prof10,
+                 rmse_rf_reg), 2),
+  MAE  = round(c(mae_lineal,  mae_arbol,
+                 mae_prof3,  mae_prof5,  mae_prof10,
+                 mae_rf_reg),  2),
+  R2   = round(c(r2_lineal,   r2_arbol,
+                 r2_prof3,   r2_prof5,   r2_prof10,
+                 r2_rf_reg),   4)
+)
+
+print(comparacion_reg_final)
+
+ggplot(comparacion_reg_final,
+       aes(x = reorder(Modelo, RMSE), y = RMSE, fill = Modelo)) +
+  geom_col(show.legend = FALSE, width = 0.6) +
+  geom_text(aes(label = RMSE), hjust = -0.15, fontface = "bold") +
+  coord_flip() +
+  labs(title    = "Comparación RMSE – Regresión Lineal vs Árboles vs Random Forest",
+       subtitle = "Menor RMSE = mejor modelo",
+       x = NULL, y = "RMSE (USD)") +
+  theme_minimal()
+```
+
+El gráfico de comparación de RMSE muestra de forma contundente que Random Forest es el mejor algoritmo para predecir el precio por noche, con un RMSE de 78.36, casi 52 doalres menos que el segundo mejor modelo. Esto representa una mejora del 40% en el error respecto a los árboles individuales y del 42% respecto a la Regresión Lineal ($136.11). Esta diferencia se explica porque Random Forest promedia las predicciones de 100 árboles entrenados con subconjuntos distintos de datos y variables, reduciendo drásticamente la varianza sin aumentar el sesgo. La Regresión Lineal y el Árbol de Profundidad 3 quedan empatados como los peores modelos con RMSE.
+
+# Random Forest para CLASIFICACIÓN (precio_cat)
+```{r}
+set.seed(123)
+rf_clasificacion <- randomForest(
+  precio_cat ~ .,
+  data       = train_clas,
+  ntree      = 100,
+  mtry       = floor(sqrt(ncol(train_clas) - 1)),
+  importance = TRUE
+)
+
+print(rf_clasificacion)
+
+
+pred_rf_clas <- predict(rf_clasificacion, newdata = test_clas)
+cf_rf        <- confusionMatrix(pred_rf_clas, test_resp_cat)
+print(cf_rf)
+
+cat("Accuracy: ", round(cf_rf$overall["Accuracy"] * 100, 2), "%\n")
+cat("Kappa:    ", round(cf_rf$overall["Kappa"], 4), "\n")
+
+
+as.data.frame(cf_rf$table) %>%
+  ggplot(aes(x = Reference, y = Prediction, fill = Freq)) +
+  geom_tile() +
+  geom_text(aes(label = Freq), fontface = "bold", size = 5) +
+  scale_fill_gradient(low = "white", high = "#E91E63") +
+  labs(title    = "Matriz de Confusión – Random Forest",
+       subtitle = "Filas = predicción | Columnas = valor real",
+       x = "Categoría real", y = "Categoría predicha") +
+  theme_minimal()
+
+
+imp_rf_clas <- as.data.frame(importance(rf_clasificacion))
+imp_rf_clas$variable <- rownames(imp_rf_clas)
+
+ggplot(imp_rf_clas, aes(x = reorder(variable, MeanDecreaseGini),
+                         y = MeanDecreaseGini)) +
+  geom_col(fill = "#9C27B0") +
+  coord_flip() +
+  labs(title    = "Importancia de Variables – Random Forest Clasificación",
+       subtitle = "Reducción promedio del índice Gini",
+       x = "Variable", y = "Mean Decrease Gini") +
+  theme_minimal()
+
+
+comparacion_clas_final <- data.frame(
+  Modelo   = c("Árbol base",
+               "Árbol CV",
+               paste0("Árbol tuneado (prof. ", mejor_prof_clas, ")"),
+               "Random Forest"),
+  Accuracy = round(c(cf$overall["Accuracy"],
+                     cf_cv$overall["Accuracy"],
+                     cf_tuneado$overall["Accuracy"],
+                     cf_rf$overall["Accuracy"]) * 100, 2),
+  Kappa    = round(c(cf$overall["Kappa"],
+                     cf_cv$overall["Kappa"],
+                     cf_tuneado$overall["Kappa"],
+                     cf_rf$overall["Kappa"]), 4)
+)
+
+print(comparacion_clas_final)
+
+ggplot(comparacion_clas_final,
+       aes(x = reorder(Modelo, Accuracy), y = Accuracy, fill = Modelo)) +
+  geom_col(show.legend = FALSE, width = 0.6) +
+  geom_text(aes(label = paste0(Accuracy, "%")),
+            hjust = -0.15, fontface = "bold") +
+  coord_flip() +
+  scale_y_continuous(limits = c(0, 100)) +
+  labs(title    = "Comparación Accuracy – Árboles vs Random Forest",
+       subtitle = "Mayor Accuracy = mejor modelo",
+       x = NULL, y = "Accuracy (%)") +
+  theme_minimal()
+```
+Random Forest alcanza un Accuracy de 84.46%, superando por un margen muy amplio al mejor árbol individual (Árbol base y tuneado con 69.24%) y al árbol con validación cruzada (66.28%). Esto representa una mejora de 15 puntos porcentuales respecto a los árboles de decisión, lo cual es una diferencia prácticamente significativa para un sistema de recomendación de propiedades.
